@@ -1,0 +1,19 @@
+{
+  "name": "@outreach/ai",
+  "version": "1.0.0",
+  "private": true,
+  "main": "src/index.ts",
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.32.1",
+    "@outreach/db": "*",
+    "@outreach/shared": "*",
+    "dotenv": "16.4.5",
+    "zod": "3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "20.16.5",
+    "tsx": "4.19.0",
+    "typescript": "5.5.4",
+    "vitest": "2.0.5"
+  }
+}

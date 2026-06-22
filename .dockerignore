@@ -1,0 +1,19 @@
+# Dependencies + build output are recreated inside the image.
+**/node_modules
+**/dist
+**/.turbo
+
+# Local env + secrets are injected at runtime (compose env_file), never baked in.
+.env
+**/.env
+.env.*
+
+# VCS + tooling
+.git
+.gitignore
+**/*.log
+.vscode
+.idea
+
+# Web build artifacts
+apps/web/dist

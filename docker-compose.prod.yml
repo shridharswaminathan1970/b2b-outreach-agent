@@ -1,0 +1,22 @@
+# Production overrides. Apply with:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Differences from the base file:
+#   - api/worker are NOT published to the host (internal-only; reached via the web
+#     reverse proxy / private network). Only the web tier is exposed.
+#   - restart: always (survive host reboots).
+#   - web exposed on :80.
+
+services:
+  api:
+    restart: always
+    ports: []
+
+  worker:
+    restart: always
+    ports: []
+
+  web:
+    restart: always
+    ports:
+      - "80:80"
