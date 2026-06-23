@@ -5,12 +5,21 @@
 FROM node:20-slim AS build
 WORKDIR /app
 
+# Absolute API origin baked into the SPA at build time. On Railway the web and api
+# are separate services, so the SPA calls the api's public URL directly. Override
+# per environment with --build-arg VITE_API_URL=... (e.g. empty for local compose,
+# which then uses the same-origin /api nginx proxy instead).
+ARG VITE_API_URL=https://outreachapi-production-2411.up.railway.app
+
 COPY package.json package-lock.json ./
 COPY apps ./apps
 COPY packages ./packages
 COPY tsconfig.base.json ./
 RUN npm ci
 
+# Vite only inlines VITE_* vars from its env files — write one so the build picks
+# up VITE_API_URL (loaded automatically in production mode).
+RUN printf 'VITE_API_URL=%s\n' "$VITE_API_URL" > apps/web/.env.production
 RUN npm run build --workspace=apps/web
 
 # ── Serve stage ──────────────────────────────────────────────────────────────

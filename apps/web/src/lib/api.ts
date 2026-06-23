@@ -5,6 +5,13 @@ import axios, { type AxiosInstance, type AxiosRequestConfig } from 'axios';
 
 const REFRESH_KEY = 'outreach.refreshToken';
 
+// API base. With VITE_API_URL set at build time (e.g. on Railway, where the SPA
+// and API are separate services), call the API directly at its public origin;
+// otherwise use a same-origin "/api" path (nginx proxy in prod, Vite proxy in dev).
+const API_BASE = import.meta.env.VITE_API_URL
+  ? `${import.meta.env.VITE_API_URL.replace(/\/$/, '')}/api`
+  : '/api';
+
 let accessToken: string | null = null;
 
 export function setAccessToken(token: string | null): void {
@@ -18,7 +25,7 @@ export function setRefreshToken(token: string | null): void {
   else localStorage.removeItem(REFRESH_KEY);
 }
 
-export const http: AxiosInstance = axios.create({ baseURL: '/api' });
+export const http: AxiosInstance = axios.create({ baseURL: API_BASE });
 
 http.interceptors.request.use((config) => {
   if (accessToken) {
@@ -34,7 +41,7 @@ async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = getRefreshToken();
   if (!refreshToken) return null;
   try {
-    const res = await axios.post('/api/auth/refresh', { refreshToken });
+    const res = await axios.post(`${API_BASE}/auth/refresh`, { refreshToken });
     const data = res.data?.data ?? res.data;
     const newAccess: string = data.accessToken;
     setAccessToken(newAccess);
