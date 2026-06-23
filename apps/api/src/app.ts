@@ -2,7 +2,7 @@
 // route mounting, health check, and the global error handler (registered last).
 import express, { type Express, type Request, type Response } from 'express';
 import helmet from 'helmet';
-import cors from 'cors';
+import cors, { type CorsOptions } from 'cors';
 import compression from 'compression';
 import { config } from './config';
 import { prisma } from './config/database';
@@ -38,29 +38,35 @@ export function createApp(): Express {
   // a load balancer (Railway/Render).
   app.set('trust proxy', 1);
 
-  app.use(helmet());
+  // ── CORS — registered FIRST, before helmet / parsers / routes, so the
+  // preflight (OPTIONS) is answered before anything else can interfere. ──
+  const corsOptions: CorsOptions = {
+    // Function form: normalize trailing slashes on the incoming Origin and the
+    // allowlist, allow non-browser requests (no Origin), and log any rejection
+    // with the exact origin so a mismatch is obvious in the logs.
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true); // curl / same-origin / health checks
+      const normalized = origin.replace(/\/+$/, '');
+      if (config.corsOrigins.includes(normalized)) return callback(null, true);
+      logger.warn(
+        `CORS: rejected origin "${origin}" — not in allowlist [${config.corsOrigins.join(', ') || 'none'}]`,
+      );
+      return callback(null, false);
+    },
+    credentials: true,
+  };
 
-  // Log the parsed allowlist once at startup so it can be verified in the
-  // Railway logs (vs. what's set in CORS_ALLOWED_ORIGINS).
+  // Log the parsed allowlist once at startup (verify in the Railway logs vs.
+  // what CORS_ALLOWED_ORIGINS is set to).
   logger.info(`CORS allowed origins: ${config.corsOrigins.join(', ') || '(none)'}`);
 
-  app.use(
-    cors({
-      // Function form: normalize trailing slashes on the incoming Origin and the
-      // allowlist, allow non-browser requests (no Origin), and log any rejection
-      // with the exact origin so a mismatch is obvious in the logs.
-      origin: (origin, callback) => {
-        if (!origin) return callback(null, true); // curl / same-origin / health checks
-        const normalized = origin.replace(/\/+$/, '');
-        if (config.corsOrigins.includes(normalized)) return callback(null, true);
-        logger.warn(
-          `CORS: rejected origin "${origin}" — not in allowlist [${config.corsOrigins.join(', ') || 'none'}]`,
-        );
-        return callback(null, false);
-      },
-      credentials: true,
-    }),
-  );
+  app.use(cors(corsOptions));
+  // Explicit preflight handler for every path (belt-and-suspenders; cors() above
+  // already short-circuits OPTIONS, but this guarantees a 204 + headers even if a
+  // later layer changes).
+  app.options('*', cors(corsOptions));
+
+  app.use(helmet());
   app.use(compression());
 
   // Public email-tracking ingress (open pixel / unsubscribe / Resend webhook).
