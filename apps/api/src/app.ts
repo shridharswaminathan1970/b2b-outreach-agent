@@ -6,6 +6,7 @@ import cors from 'cors';
 import compression from 'compression';
 import { config } from './config';
 import { prisma } from './config/database';
+import { logger } from './utils/logger';
 import { globalRateLimiter } from './middleware/rateLimit.middleware';
 import { notFoundHandler, errorHandler } from './middleware/error.middleware';
 import { sendSuccess } from './utils/response';
@@ -38,9 +39,25 @@ export function createApp(): Express {
   app.set('trust proxy', 1);
 
   app.use(helmet());
+
+  // Log the parsed allowlist once at startup so it can be verified in the
+  // Railway logs (vs. what's set in CORS_ALLOWED_ORIGINS).
+  logger.info(`CORS allowed origins: ${config.corsOrigins.join(', ') || '(none)'}`);
+
   app.use(
     cors({
-      origin: config.corsOrigins,
+      // Function form: normalize trailing slashes on the incoming Origin and the
+      // allowlist, allow non-browser requests (no Origin), and log any rejection
+      // with the exact origin so a mismatch is obvious in the logs.
+      origin: (origin, callback) => {
+        if (!origin) return callback(null, true); // curl / same-origin / health checks
+        const normalized = origin.replace(/\/+$/, '');
+        if (config.corsOrigins.includes(normalized)) return callback(null, true);
+        logger.warn(
+          `CORS: rejected origin "${origin}" — not in allowlist [${config.corsOrigins.join(', ') || 'none'}]`,
+        );
+        return callback(null, false);
+      },
       credentials: true,
     }),
   );

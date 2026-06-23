@@ -99,8 +99,10 @@ export const config = {
   isTest: env.NODE_ENV === 'test',
   port: env.API_PORT,
   baseUrl: env.API_BASE_URL,
+  // Allowed browser origins. Trailing slashes are stripped so a value like
+  // "https://app.example.com/" still matches the browser's slash-less Origin.
   corsOrigins: env.CORS_ALLOWED_ORIGINS.split(',')
-    .map((o) => o.trim())
+    .map((o) => o.trim().replace(/\/+$/, ''))
     .filter(Boolean),
   jwt: {
     accessSecret: env.JWT_SECRET,
