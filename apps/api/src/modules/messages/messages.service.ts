@@ -9,6 +9,8 @@ import { writeAuditLog } from '../audit/audit.service';
 import { isSuppressed, addSuppression } from '../suppression/suppression.service';
 import { emitWebhook } from '../webhooks/webhooks.service';
 import { sendEmail } from './messages.sender';
+import { checkSendableFrom } from './sendGuard';
+import { renderTrackedEmail } from '../tracking/tracking.email';
 import {
   type Actor,
   scopeWhere,
@@ -101,36 +103,14 @@ async function resolveSend(input: SendMessageInput): Promise<ResolvedSend> {
   };
 }
 
-// Domains that are clearly placeholders / never deliverable — a live send from
-// these is almost certainly a misconfiguration, so we refuse it.
-const PLACEHOLDER_FROM_DOMAINS = new Set([
-  'example.com',
-  'example.org',
-  'example.net',
-  'test.com',
-  'localhost',
-]);
-
-// Guard the sender on LIVE sends (safe-by-default): refuse placeholder domains,
-// and — when EMAIL_VERIFIED_DOMAINS is configured — refuse any from-domain not on
-// the allowlist. Resend's shared test sender (resend.dev) is always allowed.
-// Mock sends are unrestricted.
+// Guard the sender on LIVE sends (safe-by-default). Pure logic lives in
+// ./sendGuard (unit-tested); here we just feed it runtime config and throw.
 function assertSendableFrom(fromAddress: string): void {
-  if (config.email.useMock) return;
-  const domain = fromAddress.split('@')[1]?.toLowerCase() ?? '';
-  if (!domain) throw Errors.badRequest('Invalid from-address');
-  if (domain === 'resend.dev' || domain.endsWith('.resend.dev')) return;
-  if (PLACEHOLDER_FROM_DOMAINS.has(domain)) {
-    throw Errors.badRequest(
-      `Refusing to send from placeholder domain "${domain}". Set EMAIL_FROM_ADDRESS to an address on your verified sending domain.`,
-    );
-  }
-  const allow = config.email.verifiedDomains;
-  if (allow.length > 0 && !allow.includes(domain)) {
-    throw Errors.badRequest(
-      `From-domain "${domain}" is not in EMAIL_VERIFIED_DOMAINS (${allow.join(', ')}). Use a verified sending domain.`,
-    );
-  }
+  const result = checkSendableFrom(fromAddress, {
+    useMock: config.email.useMock,
+    verifiedDomains: config.email.verifiedDomains,
+  });
+  if (!result.ok) throw Errors.badRequest(result.reason ?? 'Sender not allowed');
 }
 
 export async function sendMessage(input: SendMessageInput, actor: Actor) {
@@ -192,11 +172,16 @@ export async function sendMessage(input: SendMessageInput, actor: Actor) {
   });
 
   try {
+    // Render an HTML part with the open-tracking pixel + unsubscribe footer, and
+    // the matching List-Unsubscribe headers, scoped to this message id.
+    const tracked = renderTrackedEmail(message.id, resolved.body);
     const result = await sendEmail({
       to: resolved.toAddress,
       from: fromAddress,
       subject: resolved.subject,
       body: resolved.body,
+      html: tracked.html,
+      headers: tracked.headers,
     });
 
     const sent = await prisma.message.update({
@@ -328,19 +313,20 @@ export async function getMessageStatus(id: string, actor: Actor) {
   return message;
 }
 
-// Ingest a provider tracking/deliverability event and update message state.
-// Hard bounces auto-suppress the recipient (CLAUDE.md).
-export async function recordEvent(id: string, input: RecordEventInput, actor: Actor) {
-  const message = await prisma.message.findUnique({
-    where: { id },
-    include: {
-      campaign: { select: { companyId: true, teamId: true } },
-      contact: { select: { externalSource: true, externalId: true } },
-    },
-  });
-  if (!message) throw Errors.notFound('Message not found');
-  assertCanRead(actor, message.campaign, { team: true });
+// The message fields the event-application core needs.
+const eventMessageInclude = {
+  campaign: { select: { companyId: true, teamId: true } },
+  contact: { select: { externalSource: true, externalId: true } },
+} satisfies Prisma.MessageInclude;
 
+type EventMessage = Prisma.MessageGetPayload<{ include: typeof eventMessageInclude }>;
+
+// Core event application — shared by the authenticated recordEvent path and the
+// public ingress paths (tracking pixel / unsubscribe / provider webhook). Runs in
+// a system context (no user): suppression + audit use the message's companyId and
+// a null actor. Hard bounces / complaints / unsubscribes auto-suppress.
+async function applyDeliverabilityEvent(message: EventMessage, input: RecordEventInput): Promise<void> {
+  const id = message.id;
   const eventAt = input.eventAt ?? new Date();
 
   await prisma.deliverabilityEvent.create({
@@ -381,7 +367,7 @@ export async function recordEvent(id: string, input: RecordEventInput, actor: Ac
     await prisma.message.update({ where: { id }, data });
   }
 
-  // Hard bounce, complaint, or unsubscribe → suppress the recipient.
+  // Hard bounce, complaint, or unsubscribe → suppress the recipient (no actor).
   const shouldSuppress =
     (input.eventType === 'bounce' && input.bounceType === 'hard') ||
     input.eventType === 'complaint' ||
@@ -391,7 +377,7 @@ export async function recordEvent(id: string, input: RecordEventInput, actor: Ac
     await addSuppression(message.toAddress, {
       reason: input.eventType === 'bounce' ? 'hard_bounce' : input.eventType,
       source: 'deliverability',
-      actor,
+      companyId: message.campaign.companyId,
     });
   }
 
@@ -400,10 +386,10 @@ export async function recordEvent(id: string, input: RecordEventInput, actor: Ac
     entityId: id,
     action: `message.event.${input.eventType}`,
     actorType: 'system',
-    actorId: actor.id,
+    actorId: null,
+    companyId: message.campaign.companyId,
     summary: `Recorded ${input.eventType}${input.bounceType ? ` (${input.bounceType})` : ''} for message ${id}`,
     payload: { eventType: input.eventType, bounceType: input.bounceType },
-    ipAddress: actor.ipAddress,
   });
 
   // Notify external systems (e.g. IGNITE-APEX CRM) of a bounce event.
@@ -422,6 +408,36 @@ export async function recordEvent(id: string, input: RecordEventInput, actor: Ac
       },
     });
   }
+}
 
+// Authenticated ingestion (POST /messages/:id/events) — RBAC-checked, then core.
+export async function recordEvent(id: string, input: RecordEventInput, actor: Actor) {
+  const message = await prisma.message.findUnique({ where: { id }, include: eventMessageInclude });
+  if (!message) throw Errors.notFound('Message not found');
+  assertCanRead(actor, message.campaign, { team: true });
+  await applyDeliverabilityEvent(message, input);
   return getMessageStatus(id, actor);
+}
+
+// Public ingress: apply an event by internal message id (tracking pixel /
+// unsubscribe). No actor / RBAC — the caller proved intent via a signed token.
+export async function ingestEventForMessage(messageId: string, input: RecordEventInput): Promise<boolean> {
+  const message = await prisma.message.findUnique({ where: { id: messageId }, include: eventMessageInclude });
+  if (!message) return false;
+  await applyDeliverabilityEvent(message, input);
+  return true;
+}
+
+// Public ingress: apply an event by the provider's message id (provider webhook).
+export async function ingestEventByProviderMessageId(
+  providerMessageId: string,
+  input: RecordEventInput,
+): Promise<boolean> {
+  const message = await prisma.message.findFirst({
+    where: { providerMessageId },
+    include: eventMessageInclude,
+  });
+  if (!message) return false;
+  await applyDeliverabilityEvent(message, input);
+  return true;
 }

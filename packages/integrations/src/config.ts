@@ -25,6 +25,16 @@ export const integrationsConfig = {
     replyTo: clean(process.env.EMAIL_REPLY_TO) || undefined,
     // Explicit override to force mock even if a key is present (tests).
     forceMock: clean(process.env.USE_MOCK_EMAIL) === 'true',
+    // SMTP (nodemailer) — used in preference to Resend when SMTP_USER is set.
+    // Sends through an existing authenticated mailbox (e.g. Google Workspace /
+    // M365), so no Resend domain verification is needed.
+    smtp: {
+      host: clean(process.env.SMTP_HOST),
+      port: Number(clean(process.env.SMTP_PORT)) || 587,
+      user: clean(process.env.SMTP_USER),
+      pass: clean(process.env.SMTP_PASS),
+      from: clean(process.env.SMTP_FROM),
+    },
   },
   enrichment: {
     apolloApiKey: clean(process.env.APOLLO_API_KEY),
@@ -37,8 +47,16 @@ export const integrationsConfig = {
   },
 };
 
+// SMTP is the chosen live transport when a username is configured (and mock is
+// not forced). Takes precedence over Resend in the factory.
+export function smtpIsLive(): boolean {
+  return !integrationsConfig.email.forceMock && integrationsConfig.email.smtp.user.length > 0;
+}
+
+// Any live email transport available? (SMTP or Resend.) Used by the factory to
+// decide live-vs-mock; the specific transport is chosen in getEmailAdapter().
 export function emailIsLive(): boolean {
-  return !integrationsConfig.email.forceMock && isReal(integrationsConfig.email.resendApiKey);
+  return smtpIsLive() || (!integrationsConfig.email.forceMock && isReal(integrationsConfig.email.resendApiKey));
 }
 export function enrichmentIsLive(): boolean {
   return (

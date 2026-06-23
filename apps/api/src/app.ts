@@ -19,6 +19,7 @@ import campaignsRoutes from './modules/campaigns/campaigns.routes';
 import opportunitiesRoutes from './modules/opportunities/opportunities.routes';
 import sequencesRoutes from './modules/sequences/sequences.routes';
 import prospectingRoutes from './modules/prospecting/prospecting.routes';
+import trackingRoutes from './modules/tracking/tracking.routes';
 import templatesRoutes from './modules/templates/templates.routes';
 import promptsRoutes from './modules/prompts/prompts.routes';
 import draftsRoutes from './modules/drafts/drafts.routes';
@@ -44,6 +45,12 @@ export function createApp(): Express {
     }),
   );
   app.use(compression());
+
+  // Public email-tracking ingress (open pixel / unsubscribe / Resend webhook).
+  // Mounted BEFORE the JSON body parser so the webhook route can read the raw
+  // bytes it needs for Svix signature verification. No auth (token / signature).
+  app.use(trackingRoutes);
+
   app.use(express.json({ limit: '5mb' }));
   app.use(express.urlencoded({ extended: true }));
 

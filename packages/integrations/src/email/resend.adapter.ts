@@ -26,6 +26,8 @@ export class ResendEmailAdapter implements EmailAdapter {
       to: message.to,
       subject: message.subject,
       text: message.body,
+      ...(message.html ? { html: message.html } : {}),
+      ...(message.headers ? { headers: message.headers } : {}),
       ...(message.replyTo ? { replyTo: message.replyTo } : {}),
     });
 

@@ -1,17 +1,27 @@
-// Email adapter factory: returns the live Resend adapter when a real key is
-// configured, otherwise the mock. Memoized so callers share one instance.
+// Email adapter factory. Live transport precedence:
+//   1. SMTP (nodemailer) — when SMTP_USER is set and mock isn't forced
+//   2. Resend — when a real RESEND_API_KEY is set
+//   3. Mock — otherwise (or when USE_MOCK_EMAIL=true)
+// Memoized so callers share one instance.
 import type { EmailAdapter } from '../types';
-import { emailIsLive } from '../config';
+import { emailIsLive, smtpIsLive } from '../config';
 import { ResendEmailAdapter } from './resend.adapter';
+import { SmtpEmailAdapter } from './smtp.adapter';
 import { MockEmailAdapter } from '../mock/email.mock';
 
 let instance: EmailAdapter | null = null;
 
 export function getEmailAdapter(): EmailAdapter {
   if (!instance) {
-    instance = emailIsLive() ? new ResendEmailAdapter() : new MockEmailAdapter();
+    if (smtpIsLive()) {
+      instance = new SmtpEmailAdapter();
+    } else if (emailIsLive()) {
+      instance = new ResendEmailAdapter();
+    } else {
+      instance = new MockEmailAdapter();
+    }
   }
   return instance;
 }
 
-export { ResendEmailAdapter, MockEmailAdapter };
+export { ResendEmailAdapter, SmtpEmailAdapter, MockEmailAdapter };

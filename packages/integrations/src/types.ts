@@ -8,7 +8,10 @@ export interface OutboundMessage {
   to: string;
   from: string;
   subject: string;
-  body: string;
+  body: string; // plain-text part
+  html?: string; // optional HTML part (enables open-pixel tracking)
+  // Extra headers, e.g. List-Unsubscribe / List-Unsubscribe-Post.
+  headers?: Record<string, string>;
   replyTo?: string;
   // Caller correlation id (e.g. our messages.id) echoed where the provider allows.
   referenceId?: string;

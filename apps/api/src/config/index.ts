@@ -69,6 +69,11 @@ const envSchema = z.object({
   // is refused (safe-by-default). Leave empty in dev; required for real sends.
   EMAIL_VERIFIED_DOMAINS: z.string().optional(),
   RESEND_API_KEY: z.string().optional(),
+  // Inbound-tracking: token signing secret + the public URL email clients reach.
+  TRACKING_SECRET: z.string().optional(),
+  PUBLIC_TRACKING_URL: z.string().url().optional(),
+  // Svix signing secret for the Resend inbound webhook (whsec_...).
+  RESEND_WEBHOOK_SECRET: z.string().optional(),
   USE_MOCK_EMAIL: envBool(true),
   USE_MOCK_ENRICHMENT: envBool(true),
   USE_MOCK_CRM: envBool(true),
@@ -128,6 +133,15 @@ export const config = {
     mockEnrichment: env.USE_MOCK_ENRICHMENT,
     mockCrm: env.USE_MOCK_CRM,
   },
+  tracking: {
+    // Secret for signing open-pixel / unsubscribe tokens. Falls back to the JWT
+    // secret so tracking works without extra config.
+    secret: env.TRACKING_SECRET || env.JWT_SECRET,
+    // Public base URL email clients hit for the pixel / unsubscribe link. In
+    // production set this to the deployed API origin.
+    publicUrl: env.PUBLIC_TRACKING_URL || env.API_BASE_URL,
+  },
+  resendWebhookSecret: env.RESEND_WEBHOOK_SECRET || '',
 } as const;
 
 export type AppConfig = typeof config;

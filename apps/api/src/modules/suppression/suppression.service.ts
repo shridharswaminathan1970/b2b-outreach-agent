@@ -27,13 +27,17 @@ export async function isSuppressed(
 
 // Add an email to a company's suppression list (idempotent) and flag matching
 // contacts in that company as suppressed.
+// Suppress an email. `actor` is optional: system-initiated suppressions (e.g. a
+// hard bounce ingested via a provider webhook or an inbound unsubscribe click)
+// have no user, in which case companyId must be supplied and addedBy is null.
 export async function addSuppression(
   email: string,
-  opts: { reason?: string; source?: string; actor: Actor; companyId?: string },
+  opts: { reason?: string; source?: string; actor?: Actor; companyId?: string },
 ) {
   const normalized = normalizeEmail(email);
   const { reason, source, actor } = opts;
-  const companyId = opts.companyId ?? actor.companyId;
+  const companyId = opts.companyId ?? actor?.companyId;
+  if (!companyId) throw Errors.badRequest('addSuppression requires a companyId or an actor');
 
   const entry = await prisma.suppressionList.upsert({
     where: { companyId_email: { companyId, email: normalized } },
@@ -43,7 +47,7 @@ export async function addSuppression(
       email: normalized,
       reason,
       source: source ?? 'manual',
-      addedBy: actor.id ?? null,
+      addedBy: actor?.id ?? null,
     },
   });
 
@@ -57,12 +61,12 @@ export async function addSuppression(
     entityType: 'suppression',
     entityId: entry.id,
     action: 'suppression.add',
-    actorType: actor.id ? 'user' : 'system',
-    actorId: actor.id ?? null,
+    actorType: actor?.id ? 'user' : 'system',
+    actorId: actor?.id ?? null,
     companyId,
     summary: `Suppressed ${normalized}${reason ? ` (${reason})` : ''}`,
     payload: { email: normalized, reason, source: source ?? 'manual' },
-    ipAddress: actor.ipAddress,
+    ipAddress: actor?.ipAddress,
   });
 
   return entry;

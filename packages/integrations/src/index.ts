@@ -5,11 +5,12 @@ export * from './types';
 export {
   integrationsConfig,
   emailIsLive,
+  smtpIsLive,
   enrichmentIsLive,
   crmIsLive,
 } from './config';
 
-export { getEmailAdapter, ResendEmailAdapter, MockEmailAdapter } from './email';
+export { getEmailAdapter, ResendEmailAdapter, SmtpEmailAdapter, MockEmailAdapter } from './email';
 export {
   getEnrichmentAdapter,
   ApolloEnrichmentAdapter,

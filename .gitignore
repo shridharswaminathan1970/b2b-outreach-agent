@@ -8,10 +8,13 @@ dist/
 build/
 .next/
 
-# Environment files
+# Environment files + their backups (never commit — these hold live secrets)
 .env
-.env.local
-.env.production
+.env.*
+!.env.example
+.env.bak*
+*.bak
+docs/.env.txt
 
 # Secrets — never commit these
 *.pem
@@ -39,5 +42,3 @@ coverage/
 
 # Aider (pre-existing tool artifacts in this repo)
 .aider*
-".env.bak" 
-".env.bak.*" 

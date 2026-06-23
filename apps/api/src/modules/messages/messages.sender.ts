@@ -12,6 +12,8 @@ export interface OutboundEmail {
   from: string;
   subject: string;
   body: string;
+  html?: string;
+  headers?: Record<string, string>;
 }
 
 export interface SendResult {
@@ -43,6 +45,8 @@ export async function sendEmail(email: OutboundEmail): Promise<SendResult> {
     from: email.from,
     subject: email.subject,
     body: email.body,
+    ...(email.html ? { html: email.html } : {}),
+    ...(email.headers ? { headers: email.headers } : {}),
   });
   return {
     provider: result.provider,

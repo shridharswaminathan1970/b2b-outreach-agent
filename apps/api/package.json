@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc",
+    "build": "tsc --noEmit && node ../../scripts/bundle.mjs src/server.ts dist/server.js",
     "start": "node dist/server.js",
     "test": "vitest run",
     "test:watch": "vitest"
