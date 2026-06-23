@@ -24,6 +24,13 @@ RUN npm run build --workspace=apps/web
 
 # ── Serve stage ──────────────────────────────────────────────────────────────
 FROM nginx:alpine
-COPY apps/web/nginx.conf /etc/nginx/conf.d/default.conf
+# Provide a template (not a final conf): the nginx image entrypoint runs envsubst
+# over /etc/nginx/templates/*.template → /etc/nginx/conf.d/ at startup. PORT has a
+# default of 80 (local/compose); Railway overrides it with its dynamic port.
+# NGINX_ENVSUBST_FILTER restricts substitution to PORT only, so nginx runtime
+# variables ($host, $scheme, $uri, …) in the config are left intact.
+ENV PORT=80
+ENV NGINX_ENVSUBST_FILTER=^PORT$
+COPY apps/web/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=build /app/apps/web/dist /usr/share/nginx/html
 EXPOSE 80
