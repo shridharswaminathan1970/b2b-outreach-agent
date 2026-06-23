@@ -1,0 +1,13 @@
+# Railway config-as-code for the WORKER service.
+#
+# Forces the Dockerfile builder and uses the Dockerfile's CMD
+# (node apps/worker/dist/index.js). startCommand = "" overrides any stale Custom
+# Start Command in the dashboard.
+#
+# In Railway: set the worker service's config path to  apps/worker/railway.toml.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/worker/Dockerfile"
+
+[deploy]
+startCommand = ""

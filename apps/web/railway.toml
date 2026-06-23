@@ -1,0 +1,15 @@
+# Railway config-as-code for the WEB service.
+#
+# Forces Railway to build with the multi-stage Dockerfile (Vite build → nginx
+# serving the static SPA on :80) instead of auto-detecting Nixpacks and running
+# "vite dev". startCommand = "" means "use the image's default CMD" (nginx), and
+# overrides any stale Custom Start Command set in the dashboard.
+#
+# In Railway: set the web service's config path (Settings → Config-as-code /
+# "Railway Config File") to  apps/web/railway.toml.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/web/Dockerfile"
+
+[deploy]
+startCommand = ""

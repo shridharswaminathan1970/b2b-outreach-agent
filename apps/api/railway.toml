@@ -1,0 +1,15 @@
+# Railway config-as-code for the API service.
+#
+# Forces the Dockerfile builder and uses the Dockerfile's CMD
+# (node apps/api/dist/server.js). startCommand = "" overrides any stale Custom
+# Start Command in the dashboard — including a "prisma migrate deploy && ..."
+# start command, which is what causes migrate to run on every container start.
+# The DB is already migrated on Supabase; run migrations separately, not on boot.
+#
+# In Railway: set the api service's config path to  apps/api/railway.toml.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "apps/api/Dockerfile"
+
+[deploy]
+startCommand = ""
