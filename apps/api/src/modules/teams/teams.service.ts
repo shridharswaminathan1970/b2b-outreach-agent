@@ -11,6 +11,7 @@ import {
   type Actor,
   canWrite,
   isCompanyWide,
+  isPlatformOwner,
   getScopedTeamIds,
   getManagedUserIds,
 } from '../../utils/tenancy';
@@ -22,10 +23,12 @@ const teamInclude = {
   _count: { select: { members: true } },
 } satisfies Prisma.TeamInclude;
 
-// Company isolation. Company-wide roles see all teams; a manager sees only teams
+// Company isolation. platform_owner sees every company (optionally filtered).
+// Company-wide roles see all teams in their company; a manager sees only teams
 // inside their own scope — teams they or a subordinate manage, plus their own
 // team — never another manager's team (getScopedTeamIds).
-async function teamWhere(actor: Actor): Promise<Prisma.TeamWhereInput> {
+async function teamWhere(actor: Actor, companyId?: string): Promise<Prisma.TeamWhereInput> {
+  if (isPlatformOwner(actor.role)) return companyId ? { companyId } : {};
   const scoped = await getScopedTeamIds(actor); // null = company-wide (no limit)
   return {
     companyId: actor.companyId,
@@ -34,9 +37,9 @@ async function teamWhere(actor: Actor): Promise<Prisma.TeamWhereInput> {
 }
 
 export async function listTeams(params: ListTeamsInput, actor: Actor) {
-  const { page, limit, search } = params;
+  const { page, limit, search, companyId } = params;
   const where: Prisma.TeamWhereInput = {
-    ...(await teamWhere(actor)),
+    ...(await teamWhere(actor, companyId)),
     ...(search ? { name: { contains: search, mode: 'insensitive' } } : {}),
   };
 
@@ -60,6 +63,7 @@ export async function listTeams(params: ListTeamsInput, actor: Actor) {
 export async function getTeamById(id: string, actor: Actor) {
   const team = await prisma.team.findUnique({ where: { id }, include: teamInclude });
   if (!team) throw Errors.notFound('Team not found');
+  if (isPlatformOwner(actor.role)) return team; // cross-company: any team
   if (team.companyId !== actor.companyId) throw Errors.notFound('Team not found');
   // A manager may only access teams inside their own scope (theirs or a
   // subordinate's); other managers' teams are invisible.
@@ -70,15 +74,16 @@ export async function getTeamById(id: string, actor: Actor) {
   return team;
 }
 
-// Verify a referenced user belongs to the actor's company, and — for a manager —
-// that the user is within their own hierarchy (so a manager can't hand a team to
-// someone outside their reporting line). Company-wide roles skip the latter.
-async function assertAssignableUser(userId: string, actor: Actor): Promise<void> {
+// Verify a referenced user belongs to `companyId` (the team's company), and — for
+// a manager — that the user is within their own hierarchy (so a manager can't
+// hand a team to someone outside their reporting line). Company-wide roles and
+// the platform_owner skip the hierarchy check.
+async function assertAssignableUser(userId: string, actor: Actor, companyId: string): Promise<void> {
   const u = await prisma.user.findUnique({ where: { id: userId }, select: { companyId: true } });
-  if (!u || u.companyId !== actor.companyId) {
-    throw Errors.badRequest('Referenced user is not in your company');
+  if (!u || u.companyId !== companyId) {
+    throw Errors.badRequest('Referenced user is not in this team’s company');
   }
-  if (!isCompanyWide(actor.role)) {
+  if (!isCompanyWide(actor.role) && !isPlatformOwner(actor.role)) {
     const managed = await getManagedUserIds(actor);
     if (!managed.includes(userId)) {
       throw Errors.forbidden('You can only assign users within your own hierarchy');
@@ -89,8 +94,18 @@ async function assertAssignableUser(userId: string, actor: Actor): Promise<void>
 export async function createTeam(input: CreateTeamInput, actor: Actor) {
   if (!canWrite(actor.role)) throw Errors.forbidden('Your role may not create teams');
 
-  if (input.managerUserId) await assertAssignableUser(input.managerUserId, actor);
-  if (input.teamLeadUserId) await assertAssignableUser(input.teamLeadUserId, actor);
+  // platform_owner creates into an explicit target company; everyone else into
+  // their own.
+  let companyId: string;
+  if (isPlatformOwner(actor.role)) {
+    if (!input.companyId) throw Errors.badRequest('companyId is required to create a team');
+    companyId = input.companyId;
+  } else {
+    companyId = actor.companyId;
+  }
+
+  if (input.managerUserId) await assertAssignableUser(input.managerUserId, actor, companyId);
+  if (input.teamLeadUserId) await assertAssignableUser(input.teamLeadUserId, actor, companyId);
 
   // A sales_manager creating a team becomes its manager by default.
   const managerUserId =
@@ -98,7 +113,7 @@ export async function createTeam(input: CreateTeamInput, actor: Actor) {
 
   const team = await prisma.team.create({
     data: {
-      companyId: actor.companyId,
+      companyId,
       name: input.name,
       department: input.department ?? null,
       managerUserId,
@@ -113,7 +128,7 @@ export async function createTeam(input: CreateTeamInput, actor: Actor) {
     action: 'team.create',
     actorType: 'user',
     actorId: actor.id,
-    companyId: actor.companyId,
+    companyId,
     summary: `Created team ${team.name}`,
     ipAddress: actor.ipAddress,
   });
@@ -125,8 +140,9 @@ export async function updateTeam(id: string, input: UpdateTeamInput, actor: Acto
   const existing = await getTeamById(id, actor);
   if (!canWrite(actor.role)) throw Errors.forbidden('Your role may not edit teams');
 
-  if (input.managerUserId) await assertAssignableUser(input.managerUserId, actor);
-  if (input.teamLeadUserId) await assertAssignableUser(input.teamLeadUserId, actor);
+  // Referenced manager/lead must belong to this team's company.
+  if (input.managerUserId) await assertAssignableUser(input.managerUserId, actor, existing.companyId);
+  if (input.teamLeadUserId) await assertAssignableUser(input.teamLeadUserId, actor, existing.companyId);
 
   const team = await prisma.team.update({
     where: { id: existing.id },
@@ -145,7 +161,7 @@ export async function updateTeam(id: string, input: UpdateTeamInput, actor: Acto
     action: 'team.update',
     actorType: 'user',
     actorId: actor.id,
-    companyId: actor.companyId,
+    companyId: existing.companyId,
     summary: `Updated team ${team.name}: ${Object.keys(input).join(', ')}`,
     payload: { changedFields: Object.keys(input) },
     ipAddress: actor.ipAddress,
@@ -171,7 +187,7 @@ export async function deleteTeam(id: string, actor: Actor) {
     action: 'team.delete',
     actorType: 'user',
     actorId: actor.id,
-    companyId: actor.companyId,
+    companyId: team.companyId,
     summary: `Deleted team ${team.name}`,
     ipAddress: actor.ipAddress,
   });

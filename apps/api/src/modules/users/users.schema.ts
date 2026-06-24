@@ -9,13 +9,15 @@ export const userRoleEnum = z.enum([
 ]);
 export const userStatusEnum = z.enum(['active', 'inactive', 'suspended']);
 
-// GET /users — list with pagination + filters.
+// GET /users — list with pagination + filters. `companyId` is honored only for
+// the platform_owner (cross-company); ignored for everyone else.
 export const listUsersSchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(100).default(20),
   search: z.string().trim().min(1).optional(),
   role: userRoleEnum.optional(),
   status: userStatusEnum.optional(),
+  companyId: z.string().uuid().optional(),
 });
 
 // :id path param shared by get/update/delete.
@@ -24,6 +26,8 @@ export const userIdParamSchema = z.object({
 });
 
 // POST /users — create. teamId / reportsToUserId default from the creating actor.
+// `companyId` is required for the platform_owner (which company to create in) and
+// ignored for everyone else (they create in their own company).
 export const createUserSchema = z.object({
   name: z.string().trim().min(1, 'Name is required').max(120),
   email: z.string().email('A valid email is required').toLowerCase(),
@@ -32,6 +36,7 @@ export const createUserSchema = z.object({
   status: userStatusEnum.default('active'),
   teamId: z.string().uuid().nullable().optional(),
   reportsToUserId: z.string().uuid().nullable().optional(),
+  companyId: z.string().uuid().optional(),
 });
 
 // POST /users/:id/role — promote/demote a subordinate.

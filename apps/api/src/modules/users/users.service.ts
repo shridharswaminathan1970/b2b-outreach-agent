@@ -15,6 +15,7 @@ import {
   assertCanManageUser,
   canWrite,
   isCompanyWide,
+  isPlatformOwner,
   getManagedUserIds,
   getScopedTeamIds,
 } from '../../utils/tenancy';
@@ -55,18 +56,22 @@ const ROLE_RANK: Record<UserRole, number> = {
 };
 
 export async function listUsers(params: ListUsersInput, actor: Actor) {
-  const { page, limit, search, role, status } = params;
+  const { page, limit, search, role, status, companyId } = params;
 
-  // Company isolation. Company-wide roles (super_admin / management_admin) see
-  // everyone; a manager sees only their reporting hierarchy (themselves + every
-  // subordinate), never peers or other managers' teams.
-  const hierarchy: Prisma.UserWhereInput = isCompanyWide(actor.role)
-    ? {}
-    : { id: { in: await getManagedUserIds(actor) } };
+  // Tenant scoping. platform_owner sees every company (optionally filtered by
+  // companyId). Company-wide roles see their whole company; a manager sees only
+  // their reporting hierarchy (themselves + every subordinate).
+  const tenantScope: Prisma.UserWhereInput = isPlatformOwner(actor.role)
+    ? companyId
+      ? { companyId }
+      : {}
+    : {
+        companyId: actor.companyId,
+        ...(isCompanyWide(actor.role) ? {} : { id: { in: await getManagedUserIds(actor) } }),
+      };
 
   const where: Prisma.UserWhereInput = {
-    companyId: actor.companyId,
-    ...hierarchy,
+    ...tenantScope,
     ...(role ? { role } : {}),
     ...(status ? { status } : {}),
     ...(search
@@ -99,6 +104,7 @@ export async function listUsers(params: ListUsersInput, actor: Actor) {
 export async function getUserById(id: string, actor: Actor) {
   const user = await prisma.user.findUnique({ where: { id }, select: publicSelect });
   if (!user) throw Errors.notFound('User not found');
+  if (isPlatformOwner(actor.role)) return user; // cross-company: any user
   if (user.companyId !== actor.companyId) throw Errors.notFound('User not found');
   // A manager may only view users inside their reporting hierarchy (incl. self).
   if (!isCompanyWide(actor.role)) {
@@ -114,25 +120,45 @@ export async function createUser(input: CreateUserInput, actor: Actor) {
   if (!canWrite(actor.role)) {
     throw Errors.forbidden('Your role may not create users');
   }
-  if (actor.role === 'sales_manager') {
-    if (input.role !== 'sdr') {
+
+  let companyId: string;
+  let teamId: string | null;
+  let reportsToUserId: string | null;
+
+  if (isPlatformOwner(actor.role)) {
+    // Cross-company: create into an explicit target company. Any referenced team
+    // / manager must belong to that same company.
+    if (!input.companyId) throw Errors.badRequest('companyId is required to create a user');
+    companyId = input.companyId;
+    teamId = input.teamId ?? null;
+    reportsToUserId = input.reportsToUserId ?? null;
+    if (teamId) {
+      const team = await prisma.team.findUnique({ where: { id: teamId }, select: { companyId: true } });
+      if (!team || team.companyId !== companyId) throw Errors.badRequest('Target team is not in that company');
+    }
+    if (reportsToUserId) {
+      const mgr = await prisma.user.findUnique({ where: { id: reportsToUserId }, select: { companyId: true } });
+      if (!mgr || mgr.companyId !== companyId) throw Errors.badRequest('Target manager is not in that company');
+    }
+  } else {
+    if (actor.role === 'sales_manager' && input.role !== 'sdr') {
       throw Errors.forbidden('A sales manager may only create SDR users');
     }
-  }
+    companyId = actor.companyId;
+    teamId = input.teamId ?? actor.teamId;
+    reportsToUserId = input.reportsToUserId ?? actor.id;
 
-  const teamId = input.teamId ?? actor.teamId;
-  const reportsToUserId = input.reportsToUserId ?? actor.id;
-
-  // A manager may only place new users in a team they manage and reporting to
-  // someone within their own hierarchy (themselves or a subordinate).
-  if (!isCompanyWide(actor.role)) {
-    const scopedTeams = await getScopedTeamIds(actor);
-    if (teamId && scopedTeams && !scopedTeams.includes(teamId)) {
-      throw Errors.forbidden('You can only place users in a team you manage');
-    }
-    const managed = await getManagedUserIds(actor);
-    if (!managed.includes(reportsToUserId)) {
-      throw Errors.forbidden('New users must report to you or someone in your hierarchy');
+    // A manager may only place new users in a team they manage and reporting to
+    // someone within their own hierarchy (themselves or a subordinate).
+    if (!isCompanyWide(actor.role)) {
+      const scopedTeams = await getScopedTeamIds(actor);
+      if (teamId && scopedTeams && !scopedTeams.includes(teamId)) {
+        throw Errors.forbidden('You can only place users in a team you manage');
+      }
+      const managed = await getManagedUserIds(actor);
+      if (!managed.includes(reportsToUserId)) {
+        throw Errors.forbidden('New users must report to you or someone in your hierarchy');
+      }
     }
   }
 
@@ -146,7 +172,7 @@ export async function createUser(input: CreateUserInput, actor: Actor) {
         passwordHash,
         role: input.role,
         status: input.status,
-        companyId: actor.companyId,
+        companyId,
         teamId,
         reportsToUserId,
       },
@@ -159,7 +185,7 @@ export async function createUser(input: CreateUserInput, actor: Actor) {
       action: 'user.create',
       actorType: 'user',
       actorId: actor.id,
-      companyId: actor.companyId,
+      companyId,
       summary: `Created user ${user.email} (${user.role})`,
       ipAddress: actor.ipAddress,
     });
@@ -201,7 +227,7 @@ export async function updateUser(id: string, input: UpdateUserInput, actor: Acto
       action: 'user.update',
       actorType: 'user',
       actorId: actor.id,
-      companyId: actor.companyId,
+      companyId: user.companyId,
       summary: `Updated user ${user.email}: ${changedFields.join(', ')}`,
       payload: { changedFields },
       ipAddress: actor.ipAddress,
@@ -232,7 +258,7 @@ export async function changeUserRole(id: string, input: ChangeRoleInput, actor: 
     action: 'user.role_change',
     actorType: 'user',
     actorId: actor.id,
-    companyId: actor.companyId,
+    companyId: user.companyId,
     summary: `Changed role of ${user.email} to ${input.role}`,
     payload: { role: input.role },
     ipAddress: actor.ipAddress,
@@ -247,6 +273,54 @@ export async function changeUserRole(id: string, input: ChangeRoleInput, actor: 
 // elevation is separately blocked by changeUserRole's rank check.
 export async function transferUser(id: string, input: TransferUserInput, actor: Actor) {
   await assertCanManageUser(actor, id);
+
+  // platform_owner can move a user across teams AND companies. Moving into a team
+  // re-homes the user to that team's company; a new manager must be in the
+  // destination company. (Records the user owns stay where they are.)
+  if (isPlatformOwner(actor.role)) {
+    const current = await prisma.user.findUniqueOrThrow({ where: { id }, select: { companyId: true } });
+    let destCompanyId = current.companyId;
+    if (input.teamId) {
+      const team = await prisma.team.findUnique({ where: { id: input.teamId }, select: { companyId: true } });
+      if (!team) throw Errors.badRequest('Target team not found');
+      destCompanyId = team.companyId;
+    }
+    if (input.reportsToUserId) {
+      const mgr = await prisma.user.findUnique({ where: { id: input.reportsToUserId }, select: { companyId: true } });
+      if (!mgr) throw Errors.badRequest('Target manager not found');
+      if (mgr.companyId !== destCompanyId) {
+        throw Errors.badRequest('Target manager must be in the same company as the destination team');
+      }
+    }
+    const companyChanged = destCompanyId !== current.companyId;
+    const user = await prisma.user.update({
+      where: { id },
+      data: {
+        teamId: input.teamId,
+        ...(companyChanged ? { companyId: destCompanyId } : {}),
+        // On a company move, drop a stale reporting line unless one was supplied.
+        ...(input.reportsToUserId !== undefined
+          ? { reportsToUserId: input.reportsToUserId }
+          : companyChanged
+            ? { reportsToUserId: null }
+            : {}),
+      },
+      select: publicSelect,
+    });
+    await writeAuditLog({
+      entityType: 'user',
+      entityId: id,
+      action: 'user.transfer',
+      actorType: 'user',
+      actorId: actor.id,
+      companyId: destCompanyId,
+      summary: `Platform owner transferred ${user.email} to team ${input.teamId ?? 'none'}${companyChanged ? ` (company → ${destCompanyId})` : ''}`,
+      payload: { teamId: input.teamId, reportsToUserId: input.reportsToUserId, companyId: destCompanyId },
+      ipAddress: actor.ipAddress,
+    });
+    return user;
+  }
+
   const companyWide = isCompanyWide(actor.role);
   const scopedTeams = companyWide ? null : await getScopedTeamIds(actor);
   const managed = companyWide ? null : await getManagedUserIds(actor);
@@ -315,7 +389,7 @@ export async function deleteUser(id: string, actor: Actor) {
     action: 'user.delete',
     actorType: 'user',
     actorId: actor.id,
-    companyId: actor.companyId,
+    companyId: user.companyId,
     summary: `Deleted user ${user.email}`,
     ipAddress: actor.ipAddress,
   });
