@@ -5,6 +5,7 @@ import { LoginPage } from '@/features/auth/LoginPage';
 import { SignupPage } from '@/features/auth/SignupPage';
 import { ResetPasswordPage } from '@/features/auth/ResetPasswordPage';
 import { PlatformConsolePage } from '@/features/platform/PlatformConsolePage';
+import { CompanyAdminPage } from '@/features/platform/CompanyAdminPage';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { CampaignsPage } from '@/features/campaigns/CampaignsPage';
 import { CampaignBriefBuilder } from '@/features/campaigns/CampaignBriefBuilder';
@@ -32,6 +33,13 @@ function Protected({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+// The home page depends on role: the platform owner has no company workspace, so
+// it goes straight to the Platform console.
+function Home() {
+  const { isPlatformOwner } = useAuth();
+  return isPlatformOwner ? <Navigate to="/platform" replace /> : <DashboardPage />;
+}
+
 export default function App() {
   return (
     <Routes>
@@ -45,7 +53,7 @@ export default function App() {
           </Protected>
         }
       >
-        <Route index element={<DashboardPage />} />
+        <Route index element={<Home />} />
         <Route path="campaigns" element={<CampaignsPage />} />
         <Route path="campaigns/new" element={<CampaignBriefBuilder />} />
         <Route path="campaigns/:id" element={<CampaignDetailPage />} />
@@ -63,6 +71,7 @@ export default function App() {
         <Route path="audit" element={<AuditLogPage />} />
         <Route path="settings" element={<CompanySettingsPage />} />
         <Route path="platform" element={<PlatformConsolePage />} />
+        <Route path="platform/companies/:id" element={<CompanyAdminPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

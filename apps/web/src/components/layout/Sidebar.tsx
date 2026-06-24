@@ -47,7 +47,12 @@ const NAV: NavItem[] = [
 export function Sidebar() {
   const { user } = useAuth();
   const role = user?.role;
-  const items = NAV.filter((n) => !n.roles || (role && n.roles.includes(role)));
+  // The platform owner has no single-company context, so it only gets the
+  // cross-company Platform console — not the per-company workspace nav.
+  const items =
+    role === 'platform_owner'
+      ? NAV.filter((n) => n.roles?.includes('platform_owner'))
+      : NAV.filter((n) => !n.roles || (role && n.roles.includes(role)));
 
   return (
     <aside className="hidden w-60 shrink-0 flex-col border-r bg-card md:flex">
