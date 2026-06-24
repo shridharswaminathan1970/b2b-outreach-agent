@@ -12,6 +12,12 @@ import {
   reassignCampaignSchema,
 } from './campaigns.schema';
 import {
+  createFromBriefSchema,
+  updateBriefSchema,
+  regenerateSequenceSchema,
+  campaignIdParamSchema as briefIdParamSchema,
+} from './brief.schema';
+import {
   listCampaignsHandler,
   getCampaignHandler,
   createCampaignHandler,
@@ -24,10 +30,33 @@ import {
   deleteCampaignHandler,
   reassignCampaignHandler,
 } from './campaigns.controller';
+import {
+  createFromBriefHandler,
+  getBriefHandler,
+  updateBriefHandler,
+  regenerateSequenceHandler,
+} from './brief.controller';
 
 const router = Router();
 
 router.use(authenticate);
+
+// Campaign Brief system — the structured create flow (Campaign + brief +
+// auto-built sequence). Registered before /:id so /brief is not swallowed.
+router.post('/brief', requireWrite, validate({ body: createFromBriefSchema }), createFromBriefHandler);
+router.get('/:id/brief', validate({ params: briefIdParamSchema }), getBriefHandler);
+router.put(
+  '/:id/brief',
+  requireWrite,
+  validate({ params: briefIdParamSchema, body: updateBriefSchema }),
+  updateBriefHandler,
+);
+router.post(
+  '/:id/sequence/regenerate',
+  requireWrite,
+  validate({ params: briefIdParamSchema, body: regenerateSequenceSchema }),
+  regenerateSequenceHandler,
+);
 
 router.get('/', validate({ query: listCampaignsSchema }), listCampaignsHandler);
 router.get('/:id', validate({ params: campaignIdParamSchema }), getCampaignHandler);

@@ -325,11 +325,53 @@ model Campaign {
   messages    Message[]
   tasks       Task[]
   opportunities Opportunity[]
+  brief       CampaignBrief?
 
   @@index([companyId])
   @@index([teamId])
   @@index([externalSource, externalId])
   @@map("campaigns")
+}
+
+// Structured Campaign Brief: the single source of truth that drives all AI email
+// generation for a campaign. 1:1 with Campaign. Holds the Product Brief (what /
+// why / the four U's / positioning), the Buyer Persona, and the Sequence
+// Strategy (touchpoint count + trust:CTA ratio used to auto-build the sequence).
+model CampaignBrief {
+  id         String @id @default(uuid())
+  campaignId String @unique @map("campaign_id")
+
+  // --- Product Brief ---
+  productName          String  @map("product_name")
+  productPurpose       String  @map("product_purpose")
+  targetCustomer       String  @map("target_customer")
+  u1Unworkable         String  @map("u1_unworkable")
+  u2Urgent             String  @map("u2_urgent")
+  u3Unavoidable        String  @map("u3_unavoidable")
+  u4Underserved        String  @map("u4_underserved")
+  positioningStatement String  @map("positioning_statement")
+
+  // --- Buyer Persona (per campaign) ---
+  industry                  String? @map("industry")
+  companySize               String? @map("company_size")
+  economicBuyerName         String? @map("economic_buyer_name")
+  economicBuyerDesignation  String? @map("economic_buyer_designation")
+  economicBuyerSeniority    String? @map("economic_buyer_seniority")
+  economicBuyerEmail        String? @map("economic_buyer_email")
+  coDecisionMakerName        String? @map("co_decision_maker_name")
+  coDecisionMakerDesignation String? @map("co_decision_maker_designation")
+  coDecisionMakerEmail       String? @map("co_decision_maker_email")
+
+  // --- Sequence Strategy ---
+  totalTouchpoints Int   @default(9) @map("total_touchpoints")
+  trustRatio       Float @default(0.8) @map("trust_ratio")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@map("campaign_briefs")
 }
 
 model Sequence {
@@ -367,6 +409,14 @@ model SequenceStep {
   // appear: "signature_only" (touches 1-5) or "inline".
   intent          String   @default("ops_intel") @map("intent")
   branding        String   @default("signature_only") @map("branding")
+  // Campaign-Brief sequence strategy. `touchType` is the role of this touch:
+  // "trust_builder" | "value_add" | "intel_gathering" (the 80% trust block) or
+  // "cta" (the final 20%). For CTA touches `ctaType` picks the offer
+  // ("webinar" | "demo" | "case_study" | "free_trial") and `ctaConfigJson` holds
+  // the type-specific fields (e.g. webinar_title, registration_link).
+  touchType       String   @default("trust_builder") @map("touch_type")
+  ctaType         String?  @map("cta_type")
+  ctaConfigJson   Json?    @map("cta_config_json")
   createdAt       DateTime @default(now()) @map("created_at")
 
   sequence    Sequence  @relation(fields: [sequenceId], references: [id], onDelete: Cascade)

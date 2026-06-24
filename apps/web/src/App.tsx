@@ -7,6 +7,7 @@ import { ResetPasswordPage } from '@/features/auth/ResetPasswordPage';
 import { PlatformConsolePage } from '@/features/platform/PlatformConsolePage';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { CampaignsPage } from '@/features/campaigns/CampaignsPage';
+import { CampaignBriefBuilder } from '@/features/campaigns/CampaignBriefBuilder';
 import { CampaignDetailPage } from '@/features/campaigns/CampaignDetailPage';
 import { ContactsPage } from '@/features/contacts/ContactsPage';
 import { ProspectingPage } from '@/features/prospecting/ProspectingPage';
@@ -46,6 +47,7 @@ export default function App() {
       >
         <Route index element={<DashboardPage />} />
         <Route path="campaigns" element={<CampaignsPage />} />
+        <Route path="campaigns/new" element={<CampaignBriefBuilder />} />
         <Route path="campaigns/:id" element={<CampaignDetailPage />} />
         <Route path="contacts" element={<ContactsPage />} />
         <Route path="prospecting" element={<ProspectingPage />} />

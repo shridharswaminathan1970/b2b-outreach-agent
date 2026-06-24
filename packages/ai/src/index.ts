@@ -19,12 +19,17 @@ export { GENERIC_PRODUCT, productContextFrom } from './types';
 // Generators
 export { generateResearchBrief } from './generators/research';
 export type { ResearchInput, ResearchResult } from './generators/research';
-export { generateDraft } from './generators/draft';
+export { generateDraft, ctaSummary } from './generators/draft';
 export type {
   DraftInput,
   DraftResult,
   TouchIntent,
   TouchBranding,
+  TouchType,
+  CtaType,
+  CampaignBriefContext,
+  BuyerPersonaContext,
+  CtaContext,
 } from './generators/draft';
 export { personalizeDraft } from './generators/personalization';
 export type {

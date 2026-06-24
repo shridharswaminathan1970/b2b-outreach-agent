@@ -4,7 +4,15 @@
 // same (contact, campaign, step) it is left alone.
 import { Prisma, prisma } from '@outreach/db';
 import { generateResearchBrief, generateDraft, evaluateDraft, productContextFrom } from '@outreach/ai';
-import type { TouchIntent, TouchBranding } from '@outreach/ai';
+import type {
+  TouchIntent,
+  TouchBranding,
+  TouchType,
+  CampaignBriefContext,
+  BuyerPersonaContext,
+  CtaContext,
+  CtaType,
+} from '@outreach/ai';
 import { logger } from '../logger';
 import { writeAudit, auditJobStart } from '../audit';
 import type { JobPayloads } from '../config/queues';
@@ -32,7 +40,13 @@ export async function generationJob(data: JobPayloads['generation']): Promise<vo
 
     const campaign = await prisma.campaign.findUnique({
       where: { id: campaignId },
-      select: { id: true, persona: true, companyId: true, company: { select: { settingsJson: true } } },
+      select: {
+        id: true,
+        persona: true,
+        companyId: true,
+        company: { select: { settingsJson: true } },
+        brief: true,
+      },
     });
     const contact = await prisma.contact.findUnique({
       where: { id: contactId },
@@ -44,19 +58,51 @@ export async function generationJob(data: JobPayloads['generation']): Promise<vo
       return;
     }
 
-    // Framework constraints from the touch (default strictest).
+    // Framework + Campaign-Brief strategy constraints from the touch (default
+    // strictest: an ops-intel trust-builder).
     let intent: TouchIntent = 'ops_intel';
     let branding: TouchBranding = 'signature_only';
+    let touchType: TouchType = 'trust_builder';
+    let cta: CtaContext | null = null;
     if (sequenceStepId) {
       const step = await prisma.sequenceStep.findUnique({
         where: { id: sequenceStepId },
-        select: { intent: true, branding: true },
+        select: { intent: true, branding: true, touchType: true, ctaType: true, ctaConfigJson: true },
       });
       if (step) {
         intent = step.intent as TouchIntent;
         branding = step.branding as TouchBranding;
+        touchType = (step.touchType as TouchType) ?? 'trust_builder';
+        if (step.touchType === 'cta' && step.ctaType) {
+          cta = {
+            type: step.ctaType as CtaType,
+            config: (step.ctaConfigJson as Record<string, unknown> | null) ?? null,
+          };
+        }
       }
     }
+
+    // Structured brief + persona context from the campaign's brief (if any).
+    const b = campaign.brief;
+    const brief: CampaignBriefContext | null = b
+      ? {
+          productPurpose: b.productPurpose,
+          targetCustomer: b.targetCustomer,
+          u1Unworkable: b.u1Unworkable,
+          u2Urgent: b.u2Urgent,
+          u3Unavoidable: b.u3Unavoidable,
+          u4Underserved: b.u4Underserved,
+          positioningStatement: b.positioningStatement,
+        }
+      : null;
+    const buyerPersona: BuyerPersonaContext | null = b
+      ? {
+          industry: b.industry,
+          companySize: b.companySize,
+          seniority: b.economicBuyerSeniority,
+          designation: b.economicBuyerDesignation,
+        }
+      : null;
 
     const md = (contact.metadataJson ?? null) as { painPoints?: string } | null;
     // Generic product/market context for this tenant (no hardcoded vendor).
@@ -86,6 +132,10 @@ export async function generationJob(data: JobPayloads['generation']): Promise<vo
       researchBrief,
       intent,
       branding,
+      touchType,
+      brief,
+      buyerPersona,
+      cta,
     });
     if (!draftRes.ok) {
       throw new Error(`AI draft generation failed: ${draftRes.error.message}`);
