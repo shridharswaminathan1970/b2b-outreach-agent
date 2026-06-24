@@ -11,6 +11,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from '@/components/ui/toaster';
 import { formatNumber } from '@/lib/utils';
 import { CampaignSequences } from '@/features/sequences/CampaignSequences';
+import { CampaignBriefPanel } from './CampaignBriefPanel';
 
 interface CampaignDetail {
   campaign: { id: string; name: string; status: string };
@@ -105,6 +106,8 @@ export function CampaignDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {id && <CampaignBriefPanel campaignId={id} />}
 
       {id && <CampaignSequences campaignId={id} />}
     </div>
