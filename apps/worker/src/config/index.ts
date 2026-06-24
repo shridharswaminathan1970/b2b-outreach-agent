@@ -27,6 +27,9 @@ loadEnvFile();
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  // Railway injects PORT; bind it (its health check / routing targets it) and
+  // fall back to WORKER_PORT locally.
+  PORT: z.coerce.number().int().positive().optional(),
   WORKER_PORT: z.coerce.number().int().positive().default(3002),
 
   // Queue connection: prefer DIRECT_URL (session mode); fall back to DATABASE_URL.
@@ -66,7 +69,7 @@ const needsSsl = /supabase\.com|supabase\.co/.test(queueConnectionString);
 export const config = {
   env: env.NODE_ENV,
   isProd: env.NODE_ENV === 'production',
-  port: env.WORKER_PORT,
+  port: env.PORT ?? env.WORKER_PORT,
   queue: {
     connectionString: queueConnectionString,
     ssl: needsSsl ? { rejectUnauthorized: false } : undefined,

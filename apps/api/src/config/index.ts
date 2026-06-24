@@ -35,6 +35,10 @@ const envBool = (def: boolean) =>
 
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  // Railway (and most PaaS) inject PORT and route public traffic to it; it MUST
+  // take precedence over API_PORT or the service is unreachable. API_PORT is the
+  // local/dev fallback.
+  PORT: z.coerce.number().int().positive().optional(),
   API_PORT: z.coerce.number().int().positive().default(3001),
   API_BASE_URL: z.string().url().default('http://localhost:3001'),
   CORS_ALLOWED_ORIGINS: z
@@ -97,7 +101,7 @@ export const config = {
   env: env.NODE_ENV,
   isProd: env.NODE_ENV === 'production',
   isTest: env.NODE_ENV === 'test',
-  port: env.API_PORT,
+  port: env.PORT ?? env.API_PORT,
   baseUrl: env.API_BASE_URL,
   // Allowed browser origins. Trailing slashes are stripped so a value like
   // "https://app.example.com/" still matches the browser's slash-less Origin.
