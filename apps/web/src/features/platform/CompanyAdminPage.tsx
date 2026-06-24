@@ -63,7 +63,13 @@ export function CompanyAdminPage() {
       <PageHeader title={c.name} actions={<StatusBadge value={c.status} />} />
 
       <SettingsCard company={c} onSaved={refetchAll} />
-      <TeamsCard companyId={id} teams={teams.data?.items ?? []} loading={teams.isLoading} onChange={refetchAll} />
+      <TeamsCard
+        companyId={id}
+        teams={teams.data?.items ?? []}
+        users={users.data?.items ?? []}
+        loading={teams.isLoading}
+        onChange={refetchAll}
+      />
       <MembersCard
         companyId={id}
         users={users.data?.items ?? []}
@@ -158,21 +164,34 @@ function SettingsCard({ company, onSaved }: { company: Company; onSaved: () => v
 
 // ── Teams ─────────────────────────────────────────────────────────────────────
 function TeamsCard({
-  companyId, teams, loading, onChange,
-}: { companyId: string; teams: Team[]; loading: boolean; onChange: () => void }) {
+  companyId, teams, users, loading, onChange,
+}: { companyId: string; teams: Team[]; users: User[]; loading: boolean; onChange: () => void }) {
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', department: '' });
+  const [form, setForm] = useState({ name: '', department: '', managerUserId: '' });
 
   const create = useMutation({
-    mutationFn: () => apiPost('/teams', { companyId, name: form.name, department: form.department || undefined }),
-    onSuccess: () => { toast({ title: 'Team created', variant: 'success' }); setOpen(false); setForm({ name: '', department: '' }); onChange(); },
+    mutationFn: () => apiPost('/teams', {
+      companyId,
+      name: form.name,
+      department: form.department || undefined,
+      ...(form.managerUserId ? { managerUserId: form.managerUserId } : {}),
+    }),
+    onSuccess: () => { toast({ title: 'Team created', variant: 'success' }); setOpen(false); setForm({ name: '', department: '', managerUserId: '' }); onChange(); },
     onError: (e) => toast({ title: 'Could not create', description: apiError(e), variant: 'destructive' }),
+  });
+  const setManager = useMutation({
+    mutationFn: ({ teamId, managerUserId }: { teamId: string; managerUserId: string }) =>
+      apiPatch(`/teams/${teamId}`, { managerUserId: managerUserId || null }),
+    onSuccess: () => { toast({ title: 'Manager updated', variant: 'success' }); onChange(); },
+    onError: (e) => toast({ title: 'Could not set manager', description: apiError(e), variant: 'destructive' }),
   });
   const del = useMutation({
     mutationFn: (teamId: string) => apiDelete(`/teams/${teamId}`),
     onSuccess: () => { toast({ title: 'Team deleted', variant: 'success' }); onChange(); },
     onError: (e) => toast({ title: 'Delete failed', description: apiError(e), variant: 'destructive' }),
   });
+
+  const noMembers = users.length === 0;
 
   return (
     <Card>
@@ -185,6 +204,18 @@ function TeamsCard({
             <div className="space-y-3">
               <div className="space-y-1.5"><Label>Name</Label><Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
               <div className="space-y-1.5"><Label>Department</Label><Input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} /></div>
+              <div className="space-y-1.5">
+                <Label>Manager</Label>
+                <select
+                  className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={form.managerUserId}
+                  onChange={(e) => setForm({ ...form, managerUserId: e.target.value })}
+                >
+                  <option value="">— none —</option>
+                  {users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
+                </select>
+                {noMembers && <p className="text-xs text-muted-foreground">Add a member first to assign a manager (you can also set it later).</p>}
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
@@ -208,7 +239,17 @@ function TeamsCard({
                 <TableRow key={t.id}>
                   <TableCell className="font-medium">{t.name}</TableCell>
                   <TableCell>{t.department ?? '—'}</TableCell>
-                  <TableCell className="text-muted-foreground">{t.manager?.name ?? '—'}</TableCell>
+                  <TableCell>
+                    {/* Inline manager assignment — handles teams created before any members existed. */}
+                    <select
+                      className="rounded-md border border-input bg-background px-2 py-1 text-xs"
+                      value={t.manager?.id ?? ''}
+                      onChange={(e) => setManager.mutate({ teamId: t.id, managerUserId: e.target.value })}
+                    >
+                      <option value="">— none —</option>
+                      {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                  </TableCell>
                   <TableCell>{t._count?.members ?? 0}</TableCell>
                   <TableCell className="text-right">
                     <button className="text-muted-foreground hover:text-destructive" onClick={() => del.mutate(t.id)} disabled={del.isPending} title="Delete team">

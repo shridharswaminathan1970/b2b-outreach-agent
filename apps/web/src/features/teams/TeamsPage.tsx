@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Plus } from 'lucide-react';
-import { apiList, apiPost, apiError } from '@/lib/api';
-import type { Team } from '@/types/api';
+import { apiList, apiPost, apiPatch, apiError } from '@/lib/api';
+import type { Team, User } from '@/types/api';
 import { useAuth } from '@/hooks/useAuth';
 import { PageHeader } from '@/components/shared/PageHeader';
 import { EmptyState } from '@/components/shared/EmptyState';
@@ -19,19 +19,35 @@ export function TeamsPage() {
   const { canWrite } = useAuth();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: '', department: '' });
+  const [form, setForm] = useState({ name: '', department: '', managerUserId: '' });
 
   const { data, isLoading } = useQuery({ queryKey: ['teams'], queryFn: () => apiList<Team>('/teams', { params: { limit: 100 } }) });
+  const usersQ = useQuery({
+    queryKey: ['users', 'for-teams'],
+    queryFn: () => apiList<User>('/users', { params: { limit: 200 } }),
+    enabled: canWrite,
+  });
+  const users = usersQ.data?.items ?? [];
 
   const create = useMutation({
-    mutationFn: () => apiPost('/teams', { name: form.name, department: form.department || undefined }),
+    mutationFn: () => apiPost('/teams', {
+      name: form.name,
+      department: form.department || undefined,
+      ...(form.managerUserId ? { managerUserId: form.managerUserId } : {}),
+    }),
     onSuccess: () => {
       toast({ title: 'Team created', variant: 'success' });
       setOpen(false);
-      setForm({ name: '', department: '' });
+      setForm({ name: '', department: '', managerUserId: '' });
       void qc.invalidateQueries({ queryKey: ['teams'] });
     },
     onError: (e) => toast({ title: 'Could not create', description: apiError(e), variant: 'destructive' }),
+  });
+  const setManager = useMutation({
+    mutationFn: ({ teamId, managerUserId }: { teamId: string; managerUserId: string }) =>
+      apiPatch(`/teams/${teamId}`, { managerUserId: managerUserId || null }),
+    onSuccess: () => { toast({ title: 'Manager updated', variant: 'success' }); void qc.invalidateQueries({ queryKey: ['teams'] }); },
+    onError: (e) => toast({ title: 'Could not set manager', description: apiError(e), variant: 'destructive' }),
   });
 
   return (
@@ -59,6 +75,17 @@ export function TeamsPage() {
                   <div className="space-y-1.5">
                     <Label>Department</Label>
                     <Input value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Manager</Label>
+                    <select
+                      className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+                      value={form.managerUserId}
+                      onChange={(e) => setForm({ ...form, managerUserId: e.target.value })}
+                    >
+                      <option value="">— none —</option>
+                      {users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
+                    </select>
                   </div>
                 </div>
                 <DialogFooter>
@@ -94,7 +121,20 @@ export function TeamsPage() {
                 <TableRow key={t.id}>
                   <TableCell className="font-medium">{t.name}</TableCell>
                   <TableCell>{t.department ?? '—'}</TableCell>
-                  <TableCell className="text-muted-foreground">{t.manager?.name ?? '—'}</TableCell>
+                  <TableCell>
+                    {canWrite ? (
+                      <select
+                        className="rounded-md border border-input bg-background px-2 py-1 text-xs"
+                        value={t.manager?.id ?? ''}
+                        onChange={(e) => setManager.mutate({ teamId: t.id, managerUserId: e.target.value })}
+                      >
+                        <option value="">— none —</option>
+                        {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      </select>
+                    ) : (
+                      <span className="text-muted-foreground">{t.manager?.name ?? '—'}</span>
+                    )}
+                  </TableCell>
                   <TableCell>{t._count?.members ?? 0}</TableCell>
                 </TableRow>
               ))}
