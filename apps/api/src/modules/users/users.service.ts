@@ -47,6 +47,7 @@ export type { Actor };
 // Seniority rank used to bound role changes (you can only set roles below your
 // own). super_admin is the only company-wide writer/manager.
 const ROLE_RANK: Record<UserRole, number> = {
+  platform_owner: 5,
   super_admin: 4,
   management_admin: 3,
   sales_manager: 2,

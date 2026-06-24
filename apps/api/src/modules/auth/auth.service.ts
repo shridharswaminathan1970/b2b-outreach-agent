@@ -1,7 +1,7 @@
 // Auth business logic: credential verification, JWT issuance, and refresh-token
 // rotation. Refresh tokens are persisted as SHA-256 hashes (never plaintext) in
 // the refresh_tokens table so they can be revoked individually or in bulk.
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../../config/database';
@@ -221,4 +221,75 @@ export async function getCurrentUser(userId: string): Promise<PublicUser> {
     companyId: user.companyId,
     teamId: user.teamId,
   };
+}
+
+// ── Password reset / set-password (used by provisioning + future "forgot password")
+const RESET_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
+
+// Create a one-time reset token for a user; returns the RAW token (only its hash
+// is stored). The caller embeds it in a link emailed to the user.
+export async function createPasswordResetToken(userId: string): Promise<string> {
+  const raw = randomBytes(32).toString('hex');
+  await prisma.passwordResetToken.create({
+    data: { userId, tokenHash: hashToken(raw), expiresAt: new Date(Date.now() + RESET_TTL_MS) },
+  });
+  return raw;
+}
+
+// Lightweight check for the reset page (is the token still usable?).
+export async function validateResetToken(token: string): Promise<{ valid: boolean; email?: string }> {
+  const row = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash: hashToken(token) },
+    include: { user: { select: { email: true } } },
+  });
+  if (!row || row.usedAt || row.expiresAt < new Date()) return { valid: false };
+  return { valid: true, email: row.user.email };
+}
+
+// Set the new password, consume the token (+ invalidate the user's other reset
+// tokens), then auto-login by issuing a fresh access/refresh pair.
+export async function resetPasswordAndLogin(
+  token: string,
+  newPassword: string,
+  ipAddress?: string | null,
+): Promise<LoginResult> {
+  const row = await prisma.passwordResetToken.findUnique({
+    where: { tokenHash: hashToken(token) },
+    include: { user: true },
+  });
+  if (!row || row.usedAt || row.expiresAt < new Date()) {
+    throw Errors.badRequest('This reset link is invalid or has expired');
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, config.bcryptRounds);
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: row.userId }, data: { passwordHash, status: 'active' } }),
+    prisma.passwordResetToken.update({ where: { id: row.id }, data: { usedAt: new Date() } }),
+    prisma.passwordResetToken.updateMany({
+      where: { userId: row.userId, usedAt: null, id: { not: row.id } },
+      data: { usedAt: new Date() },
+    }),
+  ]);
+
+  const u = row.user;
+  const publicUser: PublicUser = {
+    id: u.id,
+    email: u.email,
+    name: u.name,
+    role: u.role as UserRole,
+    companyId: u.companyId,
+    teamId: u.teamId,
+  };
+  const tokens = await issueTokens(publicUser);
+  await prisma.user.update({ where: { id: u.id }, data: { lastLoginAt: new Date() } });
+  await writeAuditLog({
+    entityType: 'user',
+    entityId: u.id,
+    action: 'auth.password_reset',
+    actorType: 'user',
+    actorId: u.id,
+    summary: `${u.email} set a new password (auto-login)`,
+    ipAddress,
+  });
+  return { user: publicUser, ...tokens };
 }

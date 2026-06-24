@@ -10,7 +10,7 @@ import {
   getRefreshToken,
 } from '@/lib/api';
 
-export type UserRole = 'super_admin' | 'management_admin' | 'sales_manager' | 'sdr';
+export type UserRole = 'platform_owner' | 'super_admin' | 'management_admin' | 'sales_manager' | 'sdr';
 
 export interface AuthUser {
   id: string;
@@ -31,12 +31,15 @@ interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  // Set the session directly from an auth result (e.g. reset-password auto-login).
+  setSession: (result: LoginResult) => void;
   logout: () => void;
   // Capabilities (kept in sync with utils/tenancy.ts on the backend).
   canWrite: boolean;
   canReassign: boolean;
   isCompanyWide: boolean;
   isSuperAdmin: boolean;
+  isPlatformOwner: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -75,11 +78,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  async function login(email: string, password: string): Promise<void> {
-    const result = await apiPost<LoginResult>('/auth/login', { email, password });
+  function setSession(result: LoginResult): void {
     setAccessToken(result.accessToken);
     setRefreshToken(result.refreshToken);
     setUser(result.user);
+  }
+
+  async function login(email: string, password: string): Promise<void> {
+    const result = await apiPost<LoginResult>('/auth/login', { email, password });
+    setSession(result);
   }
 
   function logout(): void {
@@ -95,11 +102,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       loading,
       login,
+      setSession,
       logout,
-      canWrite: role === 'super_admin' || role === 'sales_manager',
-      canReassign: role === 'super_admin' || role === 'sales_manager' || role === 'sdr',
-      isCompanyWide: role === 'super_admin' || role === 'management_admin',
+      canWrite: role === 'platform_owner' || role === 'super_admin' || role === 'sales_manager',
+      canReassign:
+        role === 'platform_owner' || role === 'super_admin' || role === 'sales_manager' || role === 'sdr',
+      isCompanyWide: role === 'platform_owner' || role === 'super_admin' || role === 'management_admin',
       isSuperAdmin: role === 'super_admin',
+      isPlatformOwner: role === 'platform_owner',
     };
   }, [user, loading]);
 

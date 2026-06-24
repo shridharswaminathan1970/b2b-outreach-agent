@@ -55,6 +55,7 @@ model User {
   createdPrompts      PromptVersion[]
   addedSuppressions   SuppressionList[]
   refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
 
   @@index([companyId])
   @@index([teamId])
@@ -120,6 +121,7 @@ model Team {
 }
 
 enum UserRole {
+  platform_owner    // cross-company platform operator ("super duper admin"); owns the provisioning console
   super_admin       // full platform access within the company (one per account)
   management_admin  // view-only across the entire company
   sales_manager     // full control scoped to their own team
@@ -672,4 +674,52 @@ model Opportunity {
   @@index([ownerUserId])
   @@index([externalSource, externalId])
   @@map("opportunities")
+}
+
+// Self-service signup/evaluation request submitted from the public form. The
+// platform_owner reviews these in the provisioning console and Approves → a
+// Company + super_admin are created and a password-reset link is emailed.
+model SignupRequest {
+  id            String    @id @default(uuid())
+  // "Company name (or the user's full name for a solo signup)".
+  companyName   String    @map("company_name")
+  fullName      String    @map("full_name")
+  email         String
+  contactNumber String?   @map("contact_number")
+  // Address captured as separate columns; country is an ISO/name from the form's
+  // country dropdown.
+  addressLine1  String?   @map("address_line1")
+  addressLine2  String?   @map("address_line2")
+  city          String?
+  zip           String?
+  country       String?
+  status        String    @default("pending") // pending | approved | rejected
+  // Populated on approval.
+  companyId     String?   @map("company_id")
+  userId        String?   @map("user_id")
+  processedBy   String?   @map("processed_by")
+  processedAt   DateTime? @map("processed_at")
+  notes         String?
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([email])
+  @@map("signup_requests")
+}
+
+// One-time password-reset token (also used for the post-provisioning "set your
+// password + auto-login" flow). Only the SHA-256 hash of the token is stored.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }

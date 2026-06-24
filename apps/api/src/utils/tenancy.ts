@@ -33,20 +33,32 @@ export function toActor(user: AuthUser, ipAddress?: string | null): Actor {
   };
 }
 
+// The cross-company platform operator ("super duper admin"). Sits above every
+// company: full read/write across ALL companies, teams, and users.
+export function isPlatformOwner(role: UserRole): boolean {
+  return role === 'platform_owner';
+}
+
 // Company-wide roles see all teams; team roles are restricted to their own team.
+// platform_owner is even broader (cross-company) — handled in scopeWhere/assert*.
 export function isCompanyWide(role: UserRole): boolean {
-  return role === 'super_admin' || role === 'management_admin';
+  return role === 'platform_owner' || role === 'super_admin' || role === 'management_admin';
 }
 
 // Roles permitted to create / edit / delete domain records.
 export function canWrite(role: UserRole): boolean {
-  return role === 'super_admin' || role === 'sales_manager';
+  return role === 'platform_owner' || role === 'super_admin' || role === 'sales_manager';
 }
 
 // Roles permitted to reassign leads / campaigns within their scope (sdr may
 // reassign within their team even though they cannot otherwise write).
 export function canReassign(role: UserRole): boolean {
-  return role === 'super_admin' || role === 'sales_manager' || role === 'sdr';
+  return (
+    role === 'platform_owner' ||
+    role === 'super_admin' ||
+    role === 'sales_manager' ||
+    role === 'sdr'
+  );
 }
 
 // ── Read scoping ─────────────────────────────────────────────────────────────
@@ -57,6 +69,8 @@ export function scopeWhere(
   actor: Actor,
   opts: { team?: boolean } = {},
 ): Record<string, string | null> {
+  // platform_owner spans every company → no tenant filter at all.
+  if (isPlatformOwner(actor.role)) return {};
   const where: Record<string, string | null> = { companyId: actor.companyId };
   if (opts.team && !isCompanyWide(actor.role)) {
     where.teamId = actor.teamId;
@@ -71,6 +85,7 @@ export function assertCanRead(
   record: { companyId: string; teamId?: string | null },
   opts: { team?: boolean } = {},
 ): void {
+  if (isPlatformOwner(actor.role)) return; // cross-company: anything is readable
   if (record.companyId !== actor.companyId) throw Errors.notFound('Not found');
   if (opts.team && !isCompanyWide(actor.role) && record.teamId !== actor.teamId) {
     throw Errors.notFound('Not found');
@@ -93,6 +108,14 @@ export function assertCanWrite(
 // All user ids transitively reporting to the actor (their subordinate subtree).
 // super_admin manages every other user in the company.
 export async function getSubordinateIds(actor: Actor): Promise<string[]> {
+  if (isPlatformOwner(actor.role)) {
+    // Cross-company: manages every user everywhere (except self).
+    const users = await prisma.user.findMany({
+      where: { id: { not: actor.id } },
+      select: { id: true },
+    });
+    return users.map((u) => u.id);
+  }
   if (actor.role === 'super_admin') {
     const users = await prisma.user.findMany({
       where: { companyId: actor.companyId, id: { not: actor.id } },
@@ -145,6 +168,10 @@ export async function getScopedTeamIds(actor: Actor): Promise<string[] | null> {
 // subordinate subtree (same company); never themselves.
 export async function canManageUser(actor: Actor, targetUserId: string): Promise<boolean> {
   if (targetUserId === actor.id) return false;
+  if (isPlatformOwner(actor.role)) {
+    const target = await prisma.user.findUnique({ where: { id: targetUserId }, select: { id: true } });
+    return Boolean(target); // cross-company: may manage any user
+  }
   if (actor.role === 'super_admin') {
     const target = await prisma.user.findUnique({
       where: { id: targetUserId },

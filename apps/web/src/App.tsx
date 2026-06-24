@@ -2,6 +2,9 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { AppShell } from '@/components/layout/AppShell';
 import { LoginPage } from '@/features/auth/LoginPage';
+import { SignupPage } from '@/features/auth/SignupPage';
+import { ResetPasswordPage } from '@/features/auth/ResetPasswordPage';
+import { PlatformConsolePage } from '@/features/platform/PlatformConsolePage';
 import { DashboardPage } from '@/features/dashboard/DashboardPage';
 import { CampaignsPage } from '@/features/campaigns/CampaignsPage';
 import { CampaignDetailPage } from '@/features/campaigns/CampaignDetailPage';
@@ -32,6 +35,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<SignupPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route
         element={
           <Protected>
@@ -55,6 +60,7 @@ export default function App() {
         <Route path="prompts" element={<PromptsPage />} />
         <Route path="audit" element={<AuditLogPage />} />
         <Route path="settings" element={<CompanySettingsPage />} />
+        <Route path="platform" element={<PlatformConsolePage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

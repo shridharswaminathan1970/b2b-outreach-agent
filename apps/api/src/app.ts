@@ -21,6 +21,7 @@ import opportunitiesRoutes from './modules/opportunities/opportunities.routes';
 import sequencesRoutes from './modules/sequences/sequences.routes';
 import prospectingRoutes from './modules/prospecting/prospecting.routes';
 import trackingRoutes from './modules/tracking/tracking.routes';
+import provisioningRoutes from './modules/provisioning/provisioning.routes';
 import templatesRoutes from './modules/templates/templates.routes';
 import promptsRoutes from './modules/prompts/prompts.routes';
 import draftsRoutes from './modules/drafts/drafts.routes';
@@ -95,6 +96,7 @@ export function createApp(): Express {
 
   // Module routes.
   app.use('/api/auth', authRoutes);
+  app.use('/api/provisioning', provisioningRoutes);
   app.use('/api/companies', companiesRoutes);
   app.use('/api/teams', teamsRoutes);
   app.use('/api/users', usersRoutes);

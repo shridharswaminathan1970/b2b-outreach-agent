@@ -25,6 +25,9 @@ export function requireRole(...allowed: UserRole[]): RequestHandler {
 // Only the company owner role.
 export const requireSuperAdmin: RequestHandler = requireRole('super_admin');
 
+// Only the cross-company platform operator ("super duper admin").
+export const requirePlatformOwner: RequestHandler = requireRole('platform_owner');
+
 // Allow roles that may create/edit/delete records (super_admin, sales_manager).
 export const requireWrite: RequestHandler = (req, _res, next) => {
   if (!req.user) {

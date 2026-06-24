@@ -3,7 +3,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { sendSuccess, Errors } from '../../utils/response';
 import * as authService from './auth.service';
-import type { LoginInput, RefreshInput, LogoutInput } from './auth.schema';
+import type { LoginInput, RefreshInput, LogoutInput, ResetPasswordInput } from './auth.schema';
 
 function clientIp(req: Request): string | null {
   const fwd = req.headers['x-forwarded-for'];
@@ -49,6 +49,35 @@ export async function logoutHandler(
     const { refreshToken } = req.body as LogoutInput;
     await authService.logout(req.user.id, refreshToken);
     sendSuccess(res, { loggedOut: true }, 200);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Public: check whether a reset token is still usable (for the reset page).
+export async function validateResetHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const result = await authService.validateResetToken(req.params.token);
+    sendSuccess(res, result, 200);
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Public: set a new password via a reset token and auto-login (returns tokens).
+export async function resetPasswordHandler(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const { token, password } = req.body as ResetPasswordInput;
+    const result = await authService.resetPasswordAndLogin(token, password, clientIp(req));
+    sendSuccess(res, result, 200);
   } catch (err) {
     next(err);
   }

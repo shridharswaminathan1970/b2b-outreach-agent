@@ -41,6 +41,11 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().optional(),
   API_PORT: z.coerce.number().int().positive().default(3001),
   API_BASE_URL: z.string().url().default('http://localhost:3001'),
+  // Public URL of the WEB app (used to build password-reset / provisioning links
+  // in emails). Set to the deployed web origin in production.
+  WEB_APP_URL: z.string().url().default('http://localhost:3000'),
+  // The platform owner ("super duper admin") who receives signup requests.
+  PLATFORM_OWNER_EMAIL: z.string().email().default('muhammad.shaamel@gmail.com'),
   CORS_ALLOWED_ORIGINS: z
     .string()
     .default('http://localhost:3000,http://localhost:5173'),
@@ -103,6 +108,8 @@ export const config = {
   isTest: env.NODE_ENV === 'test',
   port: env.PORT ?? env.API_PORT,
   baseUrl: env.API_BASE_URL,
+  webAppUrl: env.WEB_APP_URL,
+  platformOwnerEmail: env.PLATFORM_OWNER_EMAIL,
   // Allowed browser origins. Trailing slashes are stripped so a value like
   // "https://app.example.com/" still matches the browser's slash-less Origin.
   corsOrigins: env.CORS_ALLOWED_ORIGINS.split(',')

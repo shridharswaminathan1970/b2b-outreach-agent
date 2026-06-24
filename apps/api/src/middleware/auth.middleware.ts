@@ -5,7 +5,9 @@ import jwt from 'jsonwebtoken';
 import { config } from '../config';
 import { Errors } from '../utils/response';
 
-export type UserRole = 'super_admin' | 'management_admin' | 'sales_manager' | 'sdr';
+// platform_owner is the cross-company "super duper admin" (the platform operator);
+// the rest are company-scoped roles.
+export type UserRole = 'platform_owner' | 'super_admin' | 'management_admin' | 'sales_manager' | 'sdr';
 
 export interface AuthUser {
   id: string;

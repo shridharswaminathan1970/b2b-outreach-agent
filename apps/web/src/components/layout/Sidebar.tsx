@@ -14,6 +14,7 @@ import {
   Settings,
   Flame,
   Radar,
+  ShieldCheck,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth, type UserRole } from '@/hooks/useAuth';
@@ -40,6 +41,7 @@ const NAV: NavItem[] = [
   { to: '/prompts', label: 'AI Prompts', icon: Sparkles, roles: ['super_admin', 'management_admin', 'sales_manager'] },
   { to: '/audit', label: 'Audit Log', icon: ScrollText, roles: ['super_admin', 'management_admin', 'sales_manager'] },
   { to: '/settings', label: 'Company', icon: Settings, roles: ['super_admin', 'management_admin'] },
+  { to: '/platform', label: 'Platform', icon: ShieldCheck, roles: ['platform_owner'] },
 ];
 
 export function Sidebar() {
