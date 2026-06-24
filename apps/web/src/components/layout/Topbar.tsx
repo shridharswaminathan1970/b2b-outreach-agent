@@ -2,7 +2,7 @@ import { LogOut } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { humanize } from '@/lib/utils';
+import { roleLabel } from '@/lib/roleLabels';
 
 export function Topbar() {
   const { user, logout } = useAuth();
@@ -15,7 +15,7 @@ export function Topbar() {
         {user && (
           <div className="flex items-center gap-2 text-sm">
             <span className="font-medium">{user.name}</span>
-            <Badge variant="secondary">{humanize(user.role)}</Badge>
+            <Badge variant="secondary">{roleLabel(user.role)}</Badge>
           </div>
         )}
         <Button variant="ghost" size="sm" onClick={logout}>

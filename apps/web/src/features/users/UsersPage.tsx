@@ -16,9 +16,9 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from '@/components/ui/toaster';
-import { humanize } from '@/lib/utils';
+import { roleLabel, ASSIGNABLE_ROLES, ROLE_DESCRIPTIONS } from '@/lib/roleLabels';
 
-const ROLES = ['super_admin', 'management_admin', 'sales_manager', 'sdr'];
+const ROLES = ASSIGNABLE_ROLES;
 
 export function UsersPage() {
   const { canWrite, user } = useAuth();
@@ -113,10 +113,11 @@ export function UsersPage() {
                       >
                         {ROLES.map((r) => (
                           <option key={r} value={r}>
-                            {humanize(r)}
+                            {roleLabel(r)}
                           </option>
                         ))}
                       </select>
+                      <p className="text-xs text-muted-foreground">{ROLE_DESCRIPTIONS[form.role as keyof typeof ROLE_DESCRIPTIONS]}</p>
                     </div>
                     <div className="space-y-1.5">
                       <Label>Team</Label>
@@ -185,12 +186,12 @@ export function UsersPage() {
                       >
                         {ROLES.map((r) => (
                           <option key={r} value={r}>
-                            {humanize(r)}
+                            {roleLabel(r)}
                           </option>
                         ))}
                       </select>
                     ) : (
-                      <Badge variant="secondary">{humanize(u.role)}</Badge>
+                      <Badge variant="secondary">{roleLabel(u.role)}</Badge>
                     )}
                   </TableCell>
                   <TableCell>
